@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GODIA PRIME SOLUTIONS</title>
+<style>
+body{font-family:Arial,sans-serif;margin:0;background:#f5f7f8;color:#14201c}
+header{background:#075e54;color:#fff;padding:20px}main{max-width:900px;margin:auto;padding:18px}
+.card{background:#fff;padding:18px;margin:12px 0;border-radius:14px;box-shadow:0 2px 10px #0001}
+input,select,textarea,button{width:100%;padding:12px;margin:6px 0;box-sizing:border-box}
+button{background:#075e54;color:white;border:0;border-radius:8px;font-weight:bold}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+small{color:#667}
+</style>
+</head>
+<body>
+<header><h1>GODIA PRIME SOLUTIONS</h1><div>Real suppliers • Real products • Real orders</div></header>
+<main>
+<div class="card">
+<h2>Kenya-wide location</h2>
+<div class="grid">
+<select id="county"><option value="">Select County</option></select>
+<select id="sub"><option value="">Select Sub-county</option></select>
+<select id="ward"><option value="">Select Ward</option></select>
+<input id="area" placeholder="Area / Locality">
+</div>
+<button id="gps">📍 Use My Current Location</button>
+<div id="coords"><small>GPS not selected.</small></div>
+</div>
+
+<div class="card">
+<h2>Customer / Buyer</h2>
+<input id="name" placeholder="Full name">
+<input id="phone" placeholder="Phone number e.g. 0712345678">
+<input id="wa" placeholder="WhatsApp number (optional)">
+<input id="email" placeholder="Email (optional)">
+<input id="address" placeholder="Delivery address">
+<textarea id="instructions" placeholder="Delivery instructions"></textarea>
+<button id="saveCustomer">Save Customer</button>
+<pre id="result"></pre>
+</div>
+
+<div class="card">
+<h2>Real catalogue</h2>
+<p>No fake stock, prices or suppliers are inserted by this app.</p>
+<p id="health">Checking backend…</p>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+async function api(path,opt={}){const r=await fetch(path,opt);const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');return j}
+let lat=null,lon=null;
+async function loadCounties(){
+ const r=await api('/api/location/counties'); $('county').innerHTML='<option value="">Select County</option>'+
+ r.results.map(x=>`<option value="${x.id}">${x.name}</option>`).join('');
+}
+$('county').onchange=async()=>{$('sub').innerHTML='<option>Loading…</option>';const r=await api('/api/location/counties/'+$('county').value+'/sub-counties');$('sub').innerHTML='<option value="">Select Sub-county</option>'+r.results.map(x=>`<option value="${x.id}">${x.name}</option>`).join('')}
+$('sub').onchange=async()=>{const r=await api('/api/location/sub-counties/'+$('sub').value+'/wards');$('ward').innerHTML='<option value="">Select Ward</option>'+r.results.map(x=>`<option value="${x.id}">${x.name}</option>`).join('')}
+$('gps').onclick=()=>navigator.geolocation.getCurrentPosition(p=>{lat=p.coords.latitude;lon=p.coords.longitude;$('coords').textContent=`GPS: ${lat}, ${lon}`},e=>alert('Location permission was not granted: '+e.message));
+$('saveCustomer').onclick=async()=>{
+ try{
+  const r=await api('/api/customers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+   full_name:$('name').value,phone:$('phone').value,whatsapp_number:$('wa').value,email:$('email').value,
+   county_id:$('county').value,sub_county_id:$('sub').value,ward_id:$('ward').value,area:$('area').value,address:$('address').value,
+   latitude:lat,longitude:lon,delivery_instructions:$('instructions').value
+  })});
+  $('result').textContent=JSON.stringify(r,null,2);
+ }catch(e){$('result').textContent=e.message}
+};
+api('/api/health').then(x=>$('health').textContent='Backend connected: '+x.app).catch(()=>$('health').textContent='Backend not connected');
+loadCounties().catch(e=>alert(e.message));
+</script>
+</body>
+</html>
