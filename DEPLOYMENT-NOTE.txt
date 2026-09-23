@@ -1,0 +1,10 @@
+GODIA PRIME SOLUTIONS — PHASE 2 DEPLOYMENT PACKAGE
+
+This ZIP was assembled from the supplied GODIA_PRIME_ALL_CODES.txt source bundle.
+The source sections were separated into their intended project files.
+
+Important:
+1. wrangler.toml still contains the supplied placeholder:
+   database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+2. The Cloudflare D1 database and R2 bucket must exist and be bound before full deployment.
+3. This package is intended for a Wrangler/Cloudflare Workers deployment, not for pasting all files into one HTML editor.
