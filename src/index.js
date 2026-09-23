@@ -9,25 +9,32 @@ export default {
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:system-ui;background:#0a0e1a;color:white;overflow:hidden}
-#splash{position:fixed;inset:0;background:#0a0e1a;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .8s}
+#splash{position:fixed;inset:0;background:radial-gradient(circle at center,#1a237e,#0a0e1a);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .8s}
 #splash.hide{opacity:0;pointer-events:none}
-.gp{width:110px;height:110px;border:3px solid #ffd700;border-radius:25px;display:flex;align-items:center;justify-content:center;font-size:45px;font-weight:900;color:#ffd700;background:rgba(255,215,0,.1);animation:pop 2s infinite}
-@keyframes pop{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
-.snake{font-size:45px;animation:slither 2s ease-in-out infinite;margin-top:12px}
-@keyframes slither{0%{transform:translateX(-25px)}50%{transform:translateX(25px)}100%{transform:translateX(-25px)}}
-.load{margin-top:18px;color:#ffd700;font-weight:900;letter-spacing:3px}
-.bar{width:200px;height:4px;background:rgba(255,215,0,.2);border-radius:2px;margin-top:18px;overflow:hidden}
+.gp{width:120px;height:120px;border:3px solid #ffd700;border-radius:30px;display:flex;align-items:center;justify-content:center;font-size:50px;font-weight:900;color:#ffd700;background:linear-gradient(135deg,rgba(255,215,0,.2),rgba(255,111,0,.2));box-shadow:0 0 30px rgba(255,215,0,.4);animation:glow 2s infinite}
+@keyframes glow{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+.float-icons{position:relative;width:200px;height:60px;margin-top:15px}
+.float-icons span{position:absolute;font-size:28px;animation:float 3s infinite}
+.float-icons span:nth-child(1){left:0;animation-delay:0s}
+.float-icons span:nth-child(2){left:40px;animation-delay:.3s}
+.float-icons span:nth-child(3){left:85px;animation-delay:.6s}
+.float-icons span:nth-child(4){left:130px;animation-delay:.9s}
+.float-icons span:nth-child(5){left:170px;animation-delay:1.2s}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-15px)}}
+.load{margin-top:10px;color:#ffd700;font-weight:900;letter-spacing:3px}
+.bar{width:220px;height:5px;background:rgba(255,215,0,.2);border-radius:10px;margin-top:18px;overflow:hidden}
 .bar-in{height:100%;background:linear-gradient(90deg,#ffd700,#ff6f00);width:0%;animation:load 3s forwards}
 @keyframes load{to{width:100%}}
 #intro{position:fixed;inset:0;background:linear-gradient(135deg,#0a0e1a,#1a237e);z-index:9998;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .8s}
 #intro.show{opacity:1;pointer-events:all}
 .ad{text-align:center;padding:25px;animation:up .8s ease}
 @keyframes up{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}
-.ad h2{font-size:2rem;color:#ffd700;margin-bottom:12px}
+.ad h2{font-size:2.1rem;color:#ffd700;margin-bottom:12px}
 .ad p{color:#ccc;max-width:500px;margin:0 auto 15px;line-height:1.6}
-.ad-icon{font-size:55px;margin-bottom:12px}
+.ad-icon{font-size:60px;margin-bottom:12px;animation:bounce 1s infinite}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
 .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;background:linear-gradient(135deg,#0a0e1a 0%,#1a237e 100%)}
-.logo-main{width:90px;height:90px;border:2px solid #ffd700;border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:900;color:#ffd700;background:rgba(255,215,0,.1);margin-bottom:12px}
+.logo-main{width:95px;height:95px;border:2px solid #ffd700;border-radius:22px;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:900;color:#ffd700;background:rgba(255,215,0,.1);margin-bottom:12px}
 .logo-txt{font-size:2.4rem;font-weight:900;background:linear-gradient(90deg,#ffd700,#ff6f00);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .tag{font-size:1rem;color:#ffd700;letter-spacing:2px;margin-bottom:18px}
 .btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
@@ -41,9 +48,9 @@ body{font-family:system-ui;background:#0a0e1a;color:white;overflow:hidden}
 <body>
 <div id="splash">
 <div class="gp">GP</div>
-<div class="snake">🐍</div>
+<div class="float-icons"><span>👑</span><span>💼</span><span>📈</span><span>💰</span><span>🚀</span></div>
 <div class="load">GODIA PRIME</div>
-<div style="color:#888;margin-top:6px;font-size:.9rem">Loading Excellence...</div>
+<div style="color:#ffcc66;margin-top:6px">✨ Business Excellence ✨</div>
 <div class="bar"><div class="bar-in"></div></div>
 </div>
 <div id="intro"><div class="ad" id="adBox"></div></div>
@@ -88,4 +95,4 @@ i++;setTimeout(show,2100);
 </html>`;
     return new Response(html, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
   }
-  }
+}
