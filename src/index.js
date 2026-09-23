@@ -1,269 +1,91 @@
-const json = (data, status=200, headers={}) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: {"content-type":"application/json; charset=utf-8", ...headers}
-  });
-
-const id = (prefix="id") => `${prefix}_${crypto.randomUUID()}`;
-const now = () => new Date().toISOString();
-
-function corsHeaders(origin) {
-  const allowed = origin || "*";
-  return {
-    "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-    "Vary": "Origin"
-  };
-}
-
-function cleanPhone(v) {
-  if (!v) return null;
-  const s = String(v).trim().replace(/[^\d+]/g, "");
-  if (s.startsWith("07") || s.startsWith("01")) return "+254" + s.slice(1);
-  if (s.startsWith("254")) return "+" + s;
-  return s;
-}
-
-function required(body, fields) {
-  for (const f of fields) {
-    if (body[f] === undefined || body[f] === null || String(body[f]).trim() === "")
-      throw new Error(`Missing field: ${f}`);
-  }
-}
-
-function haversineKm(lat1, lon1, lat2, lon2) {
-  const R=6371, p=Math.PI/180;
-  const a=Math.sin((lat2-lat1)*p/2)**2 +
-    Math.cos(lat1*p)*Math.cos(lat2*p)*Math.sin((lon2-lon1)*p/2)**2;
-  return 2*R*Math.asin(Math.sqrt(a));
-}
-
-async function handle(request, env) {
-  const url = new URL(request.url);
-  const method = request.method;
-  const path = url.pathname;
-
-  if (method === "OPTIONS")
-    return new Response(null,{headers:corsHeaders(request.headers.get("Origin"))});
-
-  try {
-    if (path === "/api/health")
-      return json({ok:true, app:env.APP_NAME || "GODIA PRIME", time:now()});
-
-    if (path === "/api/location/counties" && method === "GET") {
-      return json(await env.DB.prepare(
-        "SELECT id,name,latitude,longitude FROM counties ORDER BY name"
-      ).all());
-    }
-
-    const mSub = path.match(/^\/api\/location\/counties\/([^/]+)\/sub-counties$/);
-    if (mSub && method === "GET") {
-      return json(await env.DB.prepare(
-        "SELECT id,name,latitude,longitude FROM sub_counties WHERE county_id=? ORDER BY name"
-      ).bind(mSub[1]).all());
-    }
-
-    const mWard = path.match(/^\/api\/location\/sub-counties\/([^/]+)\/wards$/);
-    if (mWard && method === "GET") {
-      return json(await env.DB.prepare(
-        "SELECT id,name,latitude,longitude FROM wards WHERE sub_county_id=? ORDER BY name"
-      ).bind(mWard[1]).all());
-    }
-
-    if (path === "/api/categories" && method === "GET")
-      return json(await env.DB.prepare("SELECT * FROM categories ORDER BY name").all());
-
-    if (path === "/api/subcategories" && method === "GET") {
-      const categoryId=url.searchParams.get("category_id");
-      if (!categoryId) return json({error:"category_id required"},400);
-      return json(await env.DB.prepare(
-        "SELECT * FROM subcategories WHERE category_id=? ORDER BY name"
-      ).bind(categoryId).all());
-    }
-
-    if (path === "/api/commodity-types" && method === "GET") {
-      const subcategoryId=url.searchParams.get("subcategory_id");
-      if (!subcategoryId) return json({error:"subcategory_id required"},400);
-      return json(await env.DB.prepare(
-        "SELECT * FROM commodity_types WHERE subcategory_id=? ORDER BY name"
-      ).bind(subcategoryId).all());
-    }
-
-    if (path === "/api/brands" && method === "GET")
-      return json(await env.DB.prepare("SELECT * FROM brands ORDER BY name").all());
-
-    if (path === "/api/brands" && method === "POST") {
-      const b=await request.json(); required(b,["name"]);
-      const brand={id:id("brand"),name:String(b.name).trim(),created_at:now()};
-      await env.DB.prepare("INSERT INTO brands(id,name,created_at) VALUES(?,?,?)")
-        .bind(brand.id,brand.name,brand.created_at).run();
-      return json(brand,201);
-    }
-
-    if (path === "/api/customers" && method === "POST") {
-      const b=await request.json();
-      required(b,["full_name","phone"]);
-      const c={
-        id:id("cus"), user_id:b.user_id||null, full_name:String(b.full_name).trim(),
-        phone:cleanPhone(b.phone), whatsapp_number:cleanPhone(b.whatsapp_number)||cleanPhone(b.phone),
-        email:b.email||null, county_id:b.county_id||null, sub_county_id:b.sub_county_id||null,
-        ward_id:b.ward_id||null, area:b.area||null, address:b.address||null,
-        latitude:b.latitude===""||b.latitude==null?null:Number(b.latitude),
-        longitude:b.longitude===""||b.longitude==null?null:Number(b.longitude),
-        delivery_instructions:b.delivery_instructions||null, created_at:now(), updated_at:now()
-      };
-      await env.DB.prepare(`INSERT INTO customers
-        (id,user_id,full_name,phone,whatsapp_number,email,county_id,sub_county_id,ward_id,area,address,latitude,longitude,delivery_instructions,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-        c.id,c.user_id,c.full_name,c.phone,c.whatsapp_number,c.email,c.county_id,c.sub_county_id,c.ward_id,
-        c.area,c.address,c.latitude,c.longitude,c.delivery_instructions,c.created_at,c.updated_at
-      ).run();
-      return json(c,201);
-    }
-
-    if (path === "/api/businesses" && method === "POST") {
-      const b=await request.json(); required(b,["owner_user_id","business_name","business_type"]);
-      const x={id:id("biz"),...b};
-      await env.DB.prepare(`INSERT INTO businesses
-        (id,owner_user_id,business_name,business_type,county_id,sub_county_id,ward_id,area,address,latitude,longitude,delivery_available,delivery_radius_km,verification_status)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-        x.id,x.owner_user_id,x.business_name,x.business_type,x.county_id||null,x.sub_county_id||null,x.ward_id||null,
-        x.area||null,x.address||null,x.latitude==null?null:Number(x.latitude),x.longitude==null?null:Number(x.longitude),
-        x.delivery_available?1:0,x.delivery_radius_km==null?null:Number(x.delivery_radius_km),"pending"
-      ).run();
-      return json(x,201);
-    }
-
-    if (path === "/api/products" && method === "POST") {
-      const b=await request.json();
-      required(b,["supplier_business_id","commodity_type_id","product_name","price_kes"]);
-      const p={
-        id:id("prd"), supplier_business_id:b.supplier_business_id, commodity_type_id:b.commodity_type_id,
-        brand_id:b.brand_id||null, product_name:String(b.product_name).trim(), variant:b.variant||null,
-        size_value:b.size_value==null?null:Number(b.size_value), size_unit:b.size_unit||null,
-        packaging:b.packaging||null, quantity_per_pack:b.quantity_per_pack==null?null:Number(b.quantity_per_pack),
-        selling_unit:b.selling_unit||null, price_kes:Number(b.price_kes), minimum_order:Number(b.minimum_order||1),
-        stock_quantity:Number(b.stock_quantity||0), image_key:null, batch_number:b.batch_number||null,
-        manufacturing_date:b.manufacturing_date||null, expiry_date:b.expiry_date||null, tax_status:b.tax_status||null,
-        status:"active", created_at:now(), updated_at:now()
-      };
-      await env.DB.prepare(`INSERT INTO products
-        (id,supplier_business_id,commodity_type_id,brand_id,product_name,variant,size_value,size_unit,packaging,quantity_per_pack,selling_unit,price_kes,minimum_order,stock_quantity,image_key,batch_number,manufacturing_date,expiry_date,tax_status,status,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-        p.id,p.supplier_business_id,p.commodity_type_id,p.brand_id,p.product_name,p.variant,p.size_value,p.size_unit,
-        p.packaging,p.quantity_per_pack,p.selling_unit,p.price_kes,p.minimum_order,p.stock_quantity,p.image_key,p.batch_number,
-        p.manufacturing_date,p.expiry_date,p.tax_status,p.status,p.created_at,p.updated_at
-      ).run();
-      return json(p,201);
-    }
-
-    if (path === "/api/products" && method === "GET") {
-      const commodity=url.searchParams.get("commodity_type_id");
-      const rows=commodity
-        ? await env.DB.prepare(`SELECT p.*,b.business_name,b.latitude,b.longitude
-          FROM products p JOIN businesses b ON b.id=p.supplier_business_id
-          WHERE p.commodity_type_id=? AND p.status='active' AND b.verification_status='verified' ORDER BY p.updated_at DESC`).bind(commodity).all()
-        : await env.DB.prepare(`SELECT p.*,b.business_name,b.latitude,b.longitude
-          FROM products p JOIN businesses b ON b.id=p.supplier_business_id
-          WHERE p.status='active' AND b.verification_status='verified' ORDER BY p.updated_at DESC`).all();
-      return json(rows);
-    }
-
-    const productImage=path.match(/^\/api\/products\/([^/]+)\/image$/);
-    if (productImage && method === "POST") {
-      if (!env.PRODUCT_IMAGES) return json({error:"R2 binding not configured"},503);
-      const productId=productImage[1], contentType=request.headers.get("content-type")||"application/octet-stream";
-      if (!contentType.startsWith("image/")) return json({error:"Only image uploads are accepted"},415);
-      const key=`products/${productId}/${crypto.randomUUID()}`;
-      await env.PRODUCT_IMAGES.put(key,request.body,{httpMetadata:{contentType}});
-      await env.DB.prepare("UPDATE products SET image_key=?,updated_at=? WHERE id=?").bind(key,now(),productId).run();
-      return json({ok:true,key});
-    }
-
-    const imageGet=path.match(/^\/api\/product-images\/(.+)$/);
-    if (imageGet && method === "GET") {
-      if (!env.PRODUCT_IMAGES) return new Response("R2 not configured",{status:503});
-      const obj=await env.PRODUCT_IMAGES.get(imageGet[1]);
-      if (!obj) return new Response("Not found",{status:404});
-      return new Response(obj.body,{headers:{
-        "Content-Type":obj.httpMetadata?.contentType||"application/octet-stream",
-        "Cache-Control":"public, max-age=31536000, immutable"
-      }});
-    }
-
-    if (path === "/api/orders" && method === "POST") {
-      const b=await request.json();
-      required(b,["customer_id","supplier_business_id","items"]);
-      if (!Array.isArray(b.items)||!b.items.length) return json({error:"items required"},400);
-      let subtotal=0, items=[];
-      for (const item of b.items) {
-        required(item,["product_id","quantity"]);
-        const p=await env.DB.prepare(`SELECT id,product_name,price_kes,stock_quantity,minimum_order,status
-          FROM products WHERE id=?`).bind(item.product_id).first();
-        if (!p || p.status!=="active") throw new Error("Product is unavailable");
-        const q=Number(item.quantity);
-        if (!(q>0) || q<p.minimum_order) throw new Error(`Invalid quantity for ${p.product_name}`);
-        if (q>p.stock_quantity) throw new Error(`Insufficient stock for ${p.product_name}`);
-        const line=Math.round(p.price_kes*q);
-        subtotal+=line;
-        items.push({id:id("item"),product_id:p.id,product_name_snapshot:p.product_name,price_kes_snapshot:p.price_kes,quantity:q,line_total_kes:line});
-      }
-      const deliveryFee=Number(b.delivery_fee_kes||0);
-      const order={id:id("ord"),customer_id:b.customer_id,supplier_business_id:b.supplier_business_id,
-        status:"pending",payment_status:"unpaid",subtotal_kes:subtotal,delivery_fee_kes:deliveryFee,total_kes:subtotal+deliveryFee,
-        delivery_county_id:b.delivery_county_id||null,delivery_sub_county_id:b.delivery_sub_county_id||null,
-        delivery_ward_id:b.delivery_ward_id||null,delivery_area:b.delivery_area||null,delivery_address:b.delivery_address||null,
-        delivery_latitude:b.delivery_latitude==null?null:Number(b.delivery_latitude),
-        delivery_longitude:b.delivery_longitude==null?null:Number(b.delivery_longitude),
-        receipt_key:null,created_at:now(),updated_at:now()};
-      const stmts=[
-        env.DB.prepare(`INSERT INTO orders
-          (id,customer_id,supplier_business_id,status,payment_status,subtotal_kes,delivery_fee_kes,total_kes,delivery_county_id,delivery_sub_county_id,delivery_ward_id,delivery_area,delivery_address,delivery_latitude,delivery_longitude,receipt_key,created_at,updated_at)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-          order.id,order.customer_id,order.supplier_business_id,order.status,order.payment_status,order.subtotal_kes,order.delivery_fee_kes,order.total_kes,
-          order.delivery_county_id,order.delivery_sub_county_id,order.delivery_ward_id,order.delivery_area,order.delivery_address,order.delivery_latitude,order.delivery_longitude,
-          order.receipt_key,order.created_at,order.updated_at),
-        ...items.map(i=>env.DB.prepare(`INSERT INTO order_items
-          (id,order_id,product_id,product_name_snapshot,price_kes_snapshot,quantity,line_total_kes)
-          VALUES(?,?,?,?,?,?,?)`).bind(i.id,order.id,i.product_id,i.product_name_snapshot,i.price_kes_snapshot,i.quantity,i.line_total_kes)),
-        ...items.map(i=>env.DB.prepare("UPDATE products SET stock_quantity=stock_quantity-?,updated_at=? WHERE id=?").bind(i.quantity,now(),i.product_id))
-      ];
-      await env.DB.batch(stmts);
-      return json({order,items},201);
-    }
-
-    if (path === "/api/orders" && method === "GET") {
-      const customerId=url.searchParams.get("customer_id");
-      const supplierId=url.searchParams.get("supplier_business_id");
-      let q="SELECT * FROM orders WHERE 1=1", args=[];
-      if(customerId){q+=" AND customer_id=?";args.push(customerId)}
-      if(supplierId){q+=" AND supplier_business_id=?";args.push(supplierId)}
-      q+=" ORDER BY created_at DESC LIMIT 100";
-      return json(await env.DB.prepare(q).bind(...args).all());
-    }
-
-    const orderOne=path.match(/^\/api\/orders\/([^/]+)$/);
-    if(orderOne && method==="GET") {
-      const order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(orderOne[1]).first();
-      if(!order) return json({error:"Order not found"},404);
-      const items=await env.DB.prepare("SELECT * FROM order_items WHERE order_id=?").bind(order.id).all();
-      const customer=await env.DB.prepare("SELECT full_name,phone,whatsapp_number,email,area,address FROM customers WHERE id=?").bind(order.customer_id).first();
-      return json({order,items,customer});
-    }
-
-    return json({error:"Route not found"},404);
-  } catch (e) {
-    return json({error:e.message || "Server error"},400);
-  }
-}
-
 export default {
-  async fetch(request, env, ctx) {
-    const response = await handle(request,env,ctx);
-    const h=new Headers(response.headers);
-    const origin=request.headers.get("Origin");
-    Object.entries(corsHeaders(origin)).forEach(([k,v])=>h.set(k,v));
-    return new Response(response.body,{status:response.status,headers:h});
+  async fetch(request) {
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GODIA PRIME SOLUTIONS</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui;background:#0a0e1a;color:white;overflow:hidden}
+#splash{position:fixed;inset:0;background:#0a0e1a;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .8s}
+#splash.hide{opacity:0;pointer-events:none}
+.gp{width:110px;height:110px;border:3px solid #ffd700;border-radius:25px;display:flex;align-items:center;justify-content:center;font-size:45px;font-weight:900;color:#ffd700;background:rgba(255,215,0,.1);animation:pop 2s infinite}
+@keyframes pop{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+.snake{font-size:45px;animation:slither 2s ease-in-out infinite;margin-top:12px}
+@keyframes slither{0%{transform:translateX(-25px)}50%{transform:translateX(25px)}100%{transform:translateX(-25px)}}
+.load{margin-top:18px;color:#ffd700;font-weight:900;letter-spacing:3px}
+.bar{width:200px;height:4px;background:rgba(255,215,0,.2);border-radius:2px;margin-top:18px;overflow:hidden}
+.bar-in{height:100%;background:linear-gradient(90deg,#ffd700,#ff6f00);width:0%;animation:load 3s forwards}
+@keyframes load{to{width:100%}}
+#intro{position:fixed;inset:0;background:linear-gradient(135deg,#0a0e1a,#1a237e);z-index:9998;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .8s}
+#intro.show{opacity:1;pointer-events:all}
+.ad{text-align:center;padding:25px;animation:up .8s ease}
+@keyframes up{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}
+.ad h2{font-size:2rem;color:#ffd700;margin-bottom:12px}
+.ad p{color:#ccc;max-width:500px;margin:0 auto 15px;line-height:1.6}
+.ad-icon{font-size:55px;margin-bottom:12px}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;background:linear-gradient(135deg,#0a0e1a 0%,#1a237e 100%)}
+.logo-main{width:90px;height:90px;border:2px solid #ffd700;border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:900;color:#ffd700;background:rgba(255,215,0,.1);margin-bottom:12px}
+.logo-txt{font-size:2.4rem;font-weight:900;background:linear-gradient(90deg,#ffd700,#ff6f00);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.tag{font-size:1rem;color:#ffd700;letter-spacing:2px;margin-bottom:18px}
+.btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.btn{padding:15px 28px;border-radius:30px;text-decoration:none;font-weight:900}
+.primary{background:linear-gradient(90deg,#ffd700,#ff6f00);color:#000}
+.secondary{border:2px solid #25D366;color:#25D366;background:rgba(37,211,102,.1)}
+.box{margin-top:22px;padding:15px 20px;border:1px solid rgba(255,215,0,.3);border-radius:14px;background:rgba(255,215,0,.05)}
+.box div{margin:4px 0;color:#ffd700;font-weight:bold}
+</style>
+</head>
+<body>
+<div id="splash">
+<div class="gp">GP</div>
+<div class="snake">🐍</div>
+<div class="load">GODIA PRIME</div>
+<div style="color:#888;margin-top:6px;font-size:.9rem">Loading Excellence...</div>
+<div class="bar"><div class="bar-in"></div></div>
+</div>
+<div id="intro"><div class="ad" id="adBox"></div></div>
+<div class="hero">
+<div class="logo-main">GP</div>
+<div class="logo-txt">GODIA PRIME</div>
+<div class="tag">SOLUTIONS • BUSINESS EXCELLENCE • KENYA</div>
+<h1 style="font-size:2.1rem;margin:12px 0">Empowering Businesses Across Kenya</h1>
+<p style="color:#ccc;max-width:600px;line-height:1.6;margin-bottom:22px">Professional business solutions, consultancy, and growth strategies for SMEs.</p>
+<div class="btns">
+<a class="btn primary" href="tel:+254703183586">📞 Call 0703 183 586</a>
+<a class="btn secondary" href="https://wa.me/254703183586">💬 WhatsApp Us</a>
+</div>
+<div class="box">
+<div>📞 0703 183 586 | 0116 829 281</div>
+<div>📍 Nairobi, Kenya</div>
+</div>
+<p style="margin-top:22px;font-size:.8rem;opacity:.6">🚀 LIVE • CEO Godia</p>
+</div>
+<script>
+const splash=document.getElementById('splash');
+const intro=document.getElementById('intro');
+const adBox=document.getElementById('adBox');
+const ads=[
+{icon:'👑', t:'GODIA PRIME SOLUTIONS', d:'Your Official Partner for Business Excellence in Kenya'},
+{icon:'💼', t:'Business Consultancy', d:'Expert advice to grow your SME to enterprise level'},
+{icon:'📈', t:'Growth Strategies', d:'We turn small hustles into big profitable businesses'},
+{icon:'💻', t:'Digital & Enterprise Solutions', d:'Modern websites, business systems & automation for growth'},
+{icon:'💰', t:'Financial & Payment Tools', d:'M-Pesa integration, Till Numbers & Business Tools'}
+];
+let i=0;
+setTimeout(()=>{splash.classList.add('hide');intro.classList.add('show');show();},3200);
+function show(){
+if(i>=ads.length){intro.style.opacity='0';setTimeout(()=>{intro.style.display='none';document.body.style.overflow='auto';},700);return;}
+const a=ads[i];
+adBox.innerHTML='<div class="ad-icon">'+a.icon+'</div><h2>'+a.t+'</h2><p>'+a.d+'</p><div style="color:#ffd700;margin-top:12px">'+(i+1)+' / '+ads.length+'</div>';
+adBox.style.animation='none';void adBox.offsetWidth;adBox.style.animation='up .8s ease';
+i++;setTimeout(show,2100);
+}
+</script>
+</body>
+</html>`;
+    return new Response(html, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
   }
-};
+  }
